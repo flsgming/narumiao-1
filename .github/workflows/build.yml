@@ -862,18 +862,25 @@ jobs:
           rm -rf "$ROOT/tmp_ipa"
 
           python3 /tmp/miao_live.py "upload" "Tải file lên Gofile" 95 "" "" "Đang upload IPA / RomFS..." || true
-          GF_AUTH=()
-          if [ -n "${GOFILE_TOKEN:-}" ]; then GF_AUTH=(-H "Authorization: Bearer ${GOFILE_TOKEN}"); fi
+          gf_upload() {
+            local file="$1"
+            local endpoint="$2"
+            if [ -n "${GOFILE_TOKEN:-}" ]; then
+              curl -s --retry 3 --retry-delay 5 --max-time 5400 -H "Authorization: Bearer ${GOFILE_TOKEN}" -F "file=@${file}" "$endpoint" || true
+            else
+              curl -s --retry 3 --retry-delay 5 --max-time 5400 -F "file=@${file}" "$endpoint" || true
+            fi
+          }
           SERVERS="$(curl -s --retry 3 https://api.gofile.io/servers | jq -r '.data.servers[].name' | head -n 3 || true)"
           echo "## Download Links ($PACK_MODE)" >> "$GITHUB_STEP_SUMMARY"
           for f in "$ROOT/out_ipa"/*; do
             if [ -f "$f" ] && [[ "$f" != *.idx ]]; then
               LINK=""
-              RESP="$(curl -s --retry 3 --retry-delay 5 --max-time 5400 "${GF_AUTH[@]}" -F "file=@$f" "https://upload.gofile.io/uploadfile" || true)"
+              RESP="$(gf_upload "$f" "https://upload.gofile.io/uploadfile")"
               LINK="$(echo "$RESP" | jq -r '.data.downloadPage // empty' 2>/dev/null || true)"
               if [ -z "$LINK" ]; then
                 for srv in $SERVERS; do
-                  RESP="$(curl -s --retry 3 --retry-delay 5 --max-time 5400 "${GF_AUTH[@]}" -F "file=@$f" "https://${srv}.gofile.io/contents/uploadfile" || true)"
+                  RESP="$(gf_upload "$f" "https://${srv}.gofile.io/contents/uploadfile")"
                   CAND="$(echo "$RESP" | jq -r '.data.downloadPage // empty' 2>/dev/null || true)"
                   if [ -n "$CAND" ]; then LINK="$CAND"; break; fi
                 done
